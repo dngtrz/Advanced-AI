@@ -41,20 +41,41 @@ export const slashCommands = [
 ];
 
 export async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
+  console.log(`Received slash command: ${interaction.commandName} from user ${interaction.user.username}`);
+  
   try {
     if (interaction.commandName === 'ai') {
+      console.log('Handling /ai command');
       await handleAICommand(interaction);
     } else if (interaction.commandName === 'activate') {
+      console.log('Handling /activate command');
       await handleActivateCommand(interaction);
     } else if (interaction.commandName === 'deactivate') {
+      console.log('Handling /deactivate command');
       await handleDeactivateCommand(interaction);
     } else if (interaction.commandName === 'aimode') {
+      console.log('Handling /aimode command');
       await handleAIModeCommand(interaction);
+    } else {
+      console.log(`Unknown command: ${interaction.commandName}`);
+      await interaction.reply({
+        content: 'Unknown command. Available commands: /ai, /activate, /deactivate, /aimode',
+        flags: 64
+      });
     }
   } catch (error) {
     console.error('Error handling slash command:', error);
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply('Sorry, I encountered an error while processing your command.');
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: 'Sorry, I encountered an error while processing your command.',
+          flags: 64
+        });
+      } else if (interaction.deferred) {
+        await interaction.editReply('Sorry, I encountered an error while processing your command.');
+      }
+    } catch (replyError) {
+      console.error('Error sending error response:', replyError);
     }
   }
 }
@@ -173,13 +194,13 @@ async function handleActivateCommand(interaction: ChatInputCommandInteraction) {
     
     await interaction.reply({
       content: `✅ AI responses activated in this channel!\n\nI will now respond to all messages in this channel. Use \`/deactivate\` to stop responses.`,
-      ephemeral: true
+      flags: 64 // Ephemeral flag
     });
   } catch (error) {
     console.error('Error activating channel:', error);
     await interaction.reply({
       content: 'Sorry, I encountered an error while activating this channel.',
-      ephemeral: true
+      flags: 64 // Ephemeral flag
     });
   }
 }
@@ -194,7 +215,7 @@ async function handleDeactivateCommand(interaction: ChatInputCommandInteraction)
     if (!settings) {
       await interaction.reply({
         content: 'No settings found for this server.',
-        ephemeral: true
+        flags: 64 // Ephemeral flag
       });
       return;
     }
@@ -208,13 +229,13 @@ async function handleDeactivateCommand(interaction: ChatInputCommandInteraction)
     
     await interaction.reply({
       content: `✅ AI responses deactivated in this channel!\n\nI will no longer respond to messages in this channel. Use \`/activate\` to enable responses again.`,
-      ephemeral: true
+      flags: 64 // Ephemeral flag
     });
   } catch (error) {
     console.error('Error deactivating channel:', error);
     await interaction.reply({
       content: 'Sorry, I encountered an error while deactivating this channel.',
-      ephemeral: true
+      flags: 64 // Ephemeral flag
     });
   }
 }
@@ -263,13 +284,13 @@ async function handleAIModeCommand(interaction: ChatInputCommandInteraction) {
     
     await interaction.reply({
       content: `✅ AI mode updated!\n\n**${modeDescription}**\n\nUse \`/ai [your prompt]\` to interact with the AI assistant.`,
-      ephemeral: true
+      flags: 64 // Ephemeral flag
     });
   } catch (error) {
     console.error('Error updating AI mode:', error);
     await interaction.reply({
       content: 'Sorry, I encountered an error while updating the AI mode.',
-      ephemeral: true
+      flags: 64 // Ephemeral flag
     });
   }
 }
