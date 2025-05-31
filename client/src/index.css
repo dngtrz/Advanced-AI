@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 210 11% 15%; /* #2F3136 */
+  --foreground: 0 0% 98%; /* #FFFFFF */
+  --muted: 215 13% 23%; /* #40444B */
+  --muted-foreground: 215 8% 73%; /* #B9BBBE */
+  --popover: 210 11% 15%; /* #2F3136 */
+  --popover-foreground: 0 0% 98%; /* #FFFFFF */
+  --card: 215 13% 23%; /* #40444B */
+  --card-foreground: 0 0% 98%; /* #FFFFFF */
+  --border: 215 13% 23%; /* #40444B */
+  --input: 215 13% 23%; /* #40444B */
+  --primary: 234 89% 63%; /* #5865F2 */
+  --primary-foreground: 0 0% 98%; /* #FFFFFF */
+  --secondary: 215 13% 23%; /* #40444B */
+  --secondary-foreground: 0 0% 98%; /* #FFFFFF */
+  --accent: 215 13% 23%; /* #40444B */
+  --accent-foreground: 0 0% 98%; /* #FFFFFF */
+  --destructive: 0 63% 60%; /* #ED4245 */
+  --destructive-foreground: 0 0% 98%; /* #FFFFFF */
+  --ring: 234 89% 63%; /* #5865F2 */
+  --radius: 0.5rem;
+
+  /* Discord-specific colors */
+  --discord-primary: 234 89% 63%; /* #5865F2 */
+  --discord-background: 214 11% 18%; /* #36393F */
+  --discord-secondary: 210 11% 15%; /* #2F3136 */
+  --discord-elevated: 215 13% 23%; /* #40444B */
+  --discord-text: 0 0% 98%; /* #FFFFFF */
+  --discord-muted: 215 8% 73%; /* #B9BBBE */
+  --discord-success: 139 47% 68%; /* #57F287 */
+  --discord-warning: 52 100% 68%; /* #FEE75C */
+  --discord-error: 0 63% 60%; /* #ED4245 */
+}
+
+.dark {
+  --background: 210 11% 15%; /* #2F3136 */
+  --foreground: 0 0% 98%; /* #FFFFFF */
+  --muted: 215 13% 23%; /* #40444B */
+  --muted-foreground: 215 8% 73%; /* #B9BBBE */
+  --popover: 210 11% 15%; /* #2F3136 */
+  --popover-foreground: 0 0% 98%; /* #FFFFFF */
+  --card: 215 13% 23%; /* #40444B */
+  --card-foreground: 0 0% 98%; /* #FFFFFF */
+  --border: 215 13% 23%; /* #40444B */
+  --input: 215 13% 23%; /* #40444B */
+  --primary: 234 89% 63%; /* #5865F2 */
+  --primary-foreground: 0 0% 98%; /* #FFFFFF */
+  --secondary: 215 13% 23%; /* #40444B */
+  --secondary-foreground: 0 0% 98%; /* #FFFFFF */
+  --accent: 215 13% 23%; /* #40444B */
+  --accent-foreground: 0 0% 98%; /* #FFFFFF */
+  --destructive: 0 63% 60%; /* #ED4245 */
+  --destructive-foreground: 0 0% 98%; /* #FFFFFF */
+  --ring: 234 89% 63%; /* #5865F2 */
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+}
+
+/* Discord-specific utility classes */
+.bg-discord-primary { background-color: hsl(var(--discord-primary)); }
+.bg-discord-background { background-color: hsl(var(--discord-background)); }
+.bg-discord-secondary { background-color: hsl(var(--discord-secondary)); }
+.bg-discord-elevated { background-color: hsl(var(--discord-elevated)); }
+.bg-discord-success { background-color: hsl(var(--discord-success)); }
+.bg-discord-warning { background-color: hsl(var(--discord-warning)); }
+.bg-discord-error { background-color: hsl(var(--discord-error)); }
+
+.text-discord-primary { color: hsl(var(--discord-primary)); }
+.text-discord-text { color: hsl(var(--discord-text)); }
+.text-discord-muted { color: hsl(var(--discord-muted)); }
+.text-discord-success { color: hsl(var(--discord-success)); }
+.text-discord-warning { color: hsl(var(--discord-warning)); }
+.text-discord-error { color: hsl(var(--discord-error)); }
+
+.border-discord-primary { border-color: hsl(var(--discord-primary)); }
+.border-discord-background { border-color: hsl(var(--discord-background)); }
+.border-discord-elevated { border-color: hsl(var(--discord-elevated)); }
+.border-discord-success { border-color: hsl(var(--discord-success)); }
+.border-discord-warning { border-color: hsl(var(--discord-warning)); }
+.border-discord-error { border-color: hsl(var(--discord-error)); }
