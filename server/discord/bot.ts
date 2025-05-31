@@ -48,7 +48,8 @@ client.on(Events.MessageCreate, async (message) => {
         codeFormat: true,
         allowedChannels: [],
         channelMode: 'all',
-        slashCommandMode: 'disabled'
+        slashCommandMode: 'disabled',
+        activatedChannels: []
       });
     }
 
@@ -62,6 +63,14 @@ client.on(Events.MessageCreate, async (message) => {
     // Check slash command mode
     if (settings.slashCommandMode === 'required') {
       return; // Only respond to slash commands
+    }
+
+    // Check if channel is activated (new mode)
+    if (settings.slashCommandMode === 'activated') {
+      const activatedChannels = settings.activatedChannels || [];
+      if (!activatedChannels.includes(message.channel.id)) {
+        return; // Only respond in activated channels
+      }
     }
 
     await handleMessage(message, '');

@@ -36,6 +36,7 @@ export const settings = pgTable("settings", {
   allowedChannels: text("allowed_channels").array().default([]).notNull(),
   channelMode: text("channel_mode").default("all").notNull(), // "all" or "specific"
   slashCommandMode: text("slash_command_mode").default("disabled").notNull(), // "disabled", "enabled", "required"
+  activatedChannels: text("activated_channels").array().default([]).notNull(), // channels where /activate was used
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

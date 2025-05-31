@@ -14,6 +14,16 @@ export const slashCommands = [
     .toJSON(),
   
   new SlashCommandBuilder()
+    .setName('activate')
+    .setDescription('Activate AI responses in this channel')
+    .toJSON(),
+    
+  new SlashCommandBuilder()
+    .setName('deactivate')
+    .setDescription('Deactivate AI responses in this channel')
+    .toJSON(),
+  
+  new SlashCommandBuilder()
     .setName('aimode')
     .setDescription('Configure AI response mode for this server')
     .addStringOption(option =>
@@ -23,7 +33,8 @@ export const slashCommands = [
         .addChoices(
           { name: 'Always respond to all messages', value: 'disabled' },
           { name: 'Respond to both messages and slash commands', value: 'enabled' },
-          { name: 'Only respond to slash commands', value: 'required' }
+          { name: 'Only respond to slash commands', value: 'required' },
+          { name: 'Only respond in activated channels', value: 'activated' }
         )
     )
     .toJSON()
@@ -33,6 +44,10 @@ export async function handleSlashCommand(interaction: ChatInputCommandInteractio
   try {
     if (interaction.commandName === 'ai') {
       await handleAICommand(interaction);
+    } else if (interaction.commandName === 'activate') {
+      await handleActivateCommand(interaction);
+    } else if (interaction.commandName === 'deactivate') {
+      await handleDeactivateCommand(interaction);
     } else if (interaction.commandName === 'aimode') {
       await handleAIModeCommand(interaction);
     }
@@ -124,8 +139,88 @@ async function handleAICommand(interaction: ChatInputCommandInteraction) {
   }
 }
 
+async function handleActivateCommand(interaction: ChatInputCommandInteraction) {
+  try {
+    const guildId = interaction.guild?.id || 'DM';
+    const channelId = interaction.channel?.id || 'DM';
+    
+    let settings = await storage.getSettingsByGuildId(guildId);
+    
+    if (!settings) {
+      settings = await storage.createOrUpdateSettings({
+        guildId,
+        prefix: '',
+        responseLength: 'medium',
+        personality: 'helpful',
+        codeFormat: true,
+        allowedChannels: [],
+        channelMode: 'all',
+        slashCommandMode: 'activated',
+        activatedChannels: [channelId]
+      });
+    } else {
+      const activatedChannels = settings.activatedChannels || [];
+      if (!activatedChannels.includes(channelId)) {
+        activatedChannels.push(channelId);
+      }
+      
+      settings = await storage.createOrUpdateSettings({
+        ...settings,
+        activatedChannels,
+        slashCommandMode: 'activated'
+      });
+    }
+    
+    await interaction.reply({
+      content: `✅ AI responses activated in this channel!\n\nI will now respond to all messages in this channel. Use \`/deactivate\` to stop responses.`,
+      ephemeral: true
+    });
+  } catch (error) {
+    console.error('Error activating channel:', error);
+    await interaction.reply({
+      content: 'Sorry, I encountered an error while activating this channel.',
+      ephemeral: true
+    });
+  }
+}
+
+async function handleDeactivateCommand(interaction: ChatInputCommandInteraction) {
+  try {
+    const guildId = interaction.guild?.id || 'DM';
+    const channelId = interaction.channel?.id || 'DM';
+    
+    let settings = await storage.getSettingsByGuildId(guildId);
+    
+    if (!settings) {
+      await interaction.reply({
+        content: 'No settings found for this server.',
+        ephemeral: true
+      });
+      return;
+    }
+    
+    const activatedChannels = (settings.activatedChannels || []).filter(id => id !== channelId);
+    
+    settings = await storage.createOrUpdateSettings({
+      ...settings,
+      activatedChannels
+    });
+    
+    await interaction.reply({
+      content: `✅ AI responses deactivated in this channel!\n\nI will no longer respond to messages in this channel. Use \`/activate\` to enable responses again.`,
+      ephemeral: true
+    });
+  } catch (error) {
+    console.error('Error deactivating channel:', error);
+    await interaction.reply({
+      content: 'Sorry, I encountered an error while deactivating this channel.',
+      ephemeral: true
+    });
+  }
+}
+
 async function handleAIModeCommand(interaction: ChatInputCommandInteraction) {
-  const mode = interaction.options.getString('mode', true) as 'disabled' | 'enabled' | 'required';
+  const mode = interaction.options.getString('mode', true) as 'disabled' | 'enabled' | 'required' | 'activated';
   
   try {
     const guildId = interaction.guild?.id || 'DM';
@@ -140,7 +235,8 @@ async function handleAIModeCommand(interaction: ChatInputCommandInteraction) {
         codeFormat: true,
         allowedChannels: [],
         channelMode: 'all',
-        slashCommandMode: mode
+        slashCommandMode: mode,
+        activatedChannels: []
       });
     } else {
       settings = await storage.createOrUpdateSettings({
@@ -159,6 +255,9 @@ async function handleAIModeCommand(interaction: ChatInputCommandInteraction) {
         break;
       case 'required':
         modeDescription = 'The bot will ONLY respond when summoned via /ai command';
+        break;
+      case 'activated':
+        modeDescription = 'The bot will only respond in channels activated with /activate command';
         break;
     }
     
