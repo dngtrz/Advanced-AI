@@ -1,0 +1,495 @@
+Discord AI Assistant Bot - Complete Implementation Guide
+Overview
+A Discord bot that integrates with OpenAI's API to provide ChatGPT-like responses. The bot can respond to all messages (like ChatGPT) or only to slash commands, with advanced channel control and configuration options.
+
+Features
+Core Functionality
+ChatGPT-like behavior: Responds to all messages without requiring prefixes
+OpenAI Integration: Uses GPT-4o model for responses
+Slash Commands: Modern Discord slash command support (/ai, /aimode)
+Channel Restrictions: Configure which channels the bot can respond in
+Response Modes: Three different interaction modes
+Message Length Handling: Automatically splits long responses
+Conversation Memory: Maintains context within conversations
+Customizable Settings: Personality, response length, and formatting options
+Response Modes
+Disabled (default): Bot responds to all messages normally
+Enabled: Bot responds to both regular messages and slash commands
+Required: Bot ONLY responds to slash commands
+Slash Commands
+/ai [prompt] - Ask the AI assistant a question
+/aimode [mode] - Configure response mode for the server
+Text Commands
+help - Show available commands
+ask [question] - Ask a question
+explain [topic] - Get detailed explanations
+code [request] - Get coding help
+creative [prompt] - Creative writing assistance
+settings - View/modify bot settings
+history - View conversation history
+clear - Clear conversation history
+Environment Variables Required
+DISCORD_TOKEN=your_discord_bot_token
+OPENAI_API_KEY=your_openai_api_key
+Database Schema
+// Users table
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  discordId: text("discord_id").unique().notNull(),
+  username: text("username").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+// Conversations table
+export const conversations = pgTable("conversations", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  channelId: text("channel_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+// Messages table
+export const messages = pgTable("messages", {
+  id: serial("id").primaryKey(),
+  conversationId: integer("conversation_id").references(() => conversations.id).notNull(),
+  content: text("content").notNull(),
+  role: text("role").notNull(), // 'user' or 'assistant'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+// Settings table
+export const settings = pgTable("settings", {
+  id: serial("id").primaryKey(),
+  guildId: text("guild_id").unique().notNull(),
+  prefix: text("prefix").default("!").notNull(),
+  responseLength: text("response_length").default("medium").notNull(),
+  personality: text("personality").default("helpful").notNull(),
+  codeFormat: text("code_format").default("true").notNull(),
+  allowedChannels: text("allowed_channels").array().default([]).notNull(),
+  channelMode: text("channel_mode").default("all").notNull(), // "all" or "specific"
+  slashCommandMode: text("slash_command_mode").default("disabled").notNull(), // "disabled", "enabled", "required"
+});
+Key Implementation Files
+1. Bot Main File (server/discord/bot.ts)
+import { Client, GatewayIntentBits, Events, Partials } from 'discord.js';
+import { handleMessage } from './handler';
+import { storage } from '../storage';
+import { registerSlashCommands, handleSlashCommand } from './slashCommands';
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.DirectMessages,
+  ],
+  partials: [Partials.Channel, Partials.Message],
+});
+// Event handlers
+client.once(Events.ClientReady, async (c) => {
+  console.log(`Ready! Logged in as ${c.user.tag}`);
+  await registerSlashCommands(c);
+});
+// Handle slash commands
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+  await handleSlashCommand(interaction);
+});
+// Handle regular messages
+client.on(Events.MessageCreate, async (message) => {
+  if (message.author.bot) return;
+  try {
+    let settings = await storage.getSettingsByGuildId(message.guild?.id || 'DM');
+    
+    // Create default settings if needed
+    if (!settings) {
+      settings = await storage.createOrUpdateSettings({
+        guildId: message.guild?.id || 'DM',
+        prefix: '',
+        responseLength: 'medium',
+        personality: 'helpful',
+        codeFormat: 'true',
+        allowedChannels: [],
+        channelMode: 'all',
+        slashCommandMode: 'disabled'
+      });
+    }
+    // Check channel restrictions
+    if (settings.channelMode === 'specific' && settings.allowedChannels && settings.allowedChannels.length > 0) {
+      if (!settings.allowedChannels.includes(message.channel.id)) {
+        return;
+      }
+    }
+    // Check slash command mode
+    if (settings.slashCommandMode === 'required') {
+      return; // Only respond to slash commands
+    }
+    await handleMessage(message, '');
+  } catch (error) {
+    console.error('Error handling message:', error);
+  }
+});
+export async function startBot() {
+  if (!process.env.DISCORD_TOKEN) {
+    throw new Error('DISCORD_TOKEN environment variable is required');
+  }
+  
+  if (client.isReady()) {
+    return;
+  }
+  
+  await client.login(process.env.DISCORD_TOKEN);
+  console.log('Discord bot is now online!');
+}
+export async function stopBot() {
+  if (client.isReady()) {
+    client.destroy();
+  }
+}
+export function getStatus() {
+  const isRunning = client.isReady();
+  return {
+    isRunning,
+    guilds: isRunning ? client.guilds.cache.size : 0,
+    username: isRunning ? client.user?.username || null : null,
+    uptime: isRunning ? client.uptime : null,
+  };
+}
+2. Slash Commands (server/discord/slashCommands.ts)
+import { SlashCommandBuilder, ChatInputCommandInteraction, Client } from 'discord.js';
+import { generateAIResponse } from '../openai/client';
+import { storage } from '../storage';
+export const slashCommands = [
+  new SlashCommandBuilder()
+    .setName('ai')
+    .setDescription('Ask the AI assistant a question')
+    .addStringOption(option =>
+      option.setName('prompt')
+        .setDescription('Your question or prompt for the AI')
+        .setRequired(true)
+    )
+    .toJSON(),
+  
+  new SlashCommandBuilder()
+    .setName('aimode')
+    .setDescription('Configure AI response mode for this channel')
+    .addStringOption(option =>
+      option.setName('mode')
+        .setDescription('Response mode')
+        .setRequired(true)
+        .addChoices(
+          { name: 'Always respond to all messages', value: 'disabled' },
+          { name: 'Respond to both messages and slash commands', value: 'enabled' },
+          { name: 'Only respond to slash commands', value: 'required' }
+        )
+    )
+    .toJSON()
+];
+export async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
+  try {
+    if (interaction.commandName === 'ai') {
+      await handleAICommand(interaction);
+    } else if (interaction.commandName === 'aimode') {
+      await handleAIModeCommand(interaction);
+    }
+  } catch (error) {
+    console.error('Error handling slash command:', error);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply('Sorry, I encountered an error while processing your command.');
+    }
+  }
+}
+async function handleAICommand(interaction: ChatInputCommandInteraction) {
+  const prompt = interaction.options.getString('prompt', true);
+  
+  await interaction.deferReply();
+  
+  try {
+    const guildId = interaction.guild?.id || 'DM';
+    const settings = await storage.getSettingsByGuildId(guildId);
+    
+    const response = await generateAIResponse(
+      prompt,
+      settings?.personality,
+      settings?.responseLength
+    );
+    
+    if (response.length <= 1900) {
+      await interaction.editReply(response);
+    } else {
+      const chunks = splitMessage(response);
+      await interaction.editReply(chunks[0]);
+      
+      for (let i = 1; i < chunks.length; i++) {
+        await interaction.followUp(chunks[i]);
+      }
+    }
+  } catch (error) {
+    console.error('Error generating AI response:', error);
+    await interaction.editReply('Sorry, I encountered an error while generating a response.');
+  }
+}
+async function handleAIModeCommand(interaction: ChatInputCommandInteraction) {
+  const mode = interaction.options.getString('mode', true) as 'disabled' | 'enabled' | 'required';
+  
+  try {
+    const guildId = interaction.guild?.id || 'DM';
+    let settings = await storage.getSettingsByGuildId(guildId);
+    
+    if (!settings) {
+      settings = await storage.createOrUpdateSettings({
+        guildId,
+        prefix: '',
+        responseLength: 'medium',
+        personality: 'helpful',
+        codeFormat: 'true',
+        allowedChannels: [],
+        channelMode: 'all',
+        slashCommandMode: mode
+      });
+    } else {
+      settings = await storage.createOrUpdateSettings({
+        ...settings,
+        slashCommandMode: mode
+      });
+    }
+    
+    let modeDescription: string;
+    switch (mode) {
+      case 'disabled':
+        modeDescription = 'The bot will respond to all messages normally (no slash command required)';
+        break;
+      case 'enabled':
+        modeDescription = 'The bot will respond to both regular messages and slash commands';
+        break;
+      case 'required':
+        modeDescription = 'The bot will ONLY respond when summoned via /ai command';
+        break;
+    }
+    
+    await interaction.reply({
+      content: `✅ AI mode updated!\n\n**${modeDescription}**\n\nUse \`/ai [your prompt]\` to interact with the AI assistant.`,
+      flags: 64 // Ephemeral flag
+    });
+  } catch (error) {
+    console.error('Error updating AI mode:', error);
+    await interaction.reply({
+      content: 'Sorry, I encountered an error while updating the AI mode.',
+      flags: 64 // Ephemeral flag
+    });
+  }
+}
+function splitMessage(text: string, maxLength = 1900): string[] {
+  if (text.length <= maxLength) return [text];
+  
+  const chunks: string[] = [];
+  let currentChunk = '';
+  const lines = text.split('\n');
+  
+  for (const line of lines) {
+    if (currentChunk.length + line.length + 1 > maxLength) {
+      if (currentChunk.trim()) {
+        chunks.push(currentChunk.trim());
+      }
+      
+      if (line.length > maxLength) {
+        let remainingLine = line;
+        while (remainingLine.length > maxLength) {
+          chunks.push(remainingLine.substring(0, maxLength));
+          remainingLine = remainingLine.substring(maxLength);
+        }
+        currentChunk = remainingLine;
+      } else {
+        currentChunk = line;
+      }
+    } else {
+      if (currentChunk.length > 0) {
+        currentChunk += '\n' + line;
+      } else {
+        currentChunk = line;
+      }
+    }
+  }
+  
+  if (currentChunk.trim()) {
+    chunks.push(currentChunk.trim());
+  }
+  
+  return chunks.length > 0 ? chunks : [text.substring(0, maxLength)];
+}
+export async function registerSlashCommands(client: Client) {
+  if (!client.user) return;
+  
+  try {
+    console.log('Registering slash commands...');
+    
+    await client.application?.commands.set(slashCommands);
+    
+    const guilds = Array.from(client.guilds.cache.values());
+    for (const guild of guilds) {
+      try {
+        await guild.commands.set(slashCommands);
+        console.log(`Registered slash commands for guild: ${guild.name}`);
+      } catch (guildError) {
+        console.error(`Error registering commands for guild ${guild.name}:`, guildError);
+      }
+    }
+    
+    console.log('Successfully registered slash commands!');
+  } catch (error) {
+    console.error('Error registering slash commands:', error);
+  }
+}
+3. OpenAI Integration (server/openai/client.ts)
+import OpenAI from "openai";
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+export async function generateAIResponse(
+  message: string,
+  personality?: string,
+  responseLength?: string
+): Promise<string> {
+  try {
+    let systemPrompt = "You are a helpful AI assistant in a Discord server. ";
+    
+    // Personality customization
+    switch (personality) {
+      case 'friendly':
+        systemPrompt += "Be warm, casual, and use friendly language. ";
+        break;
+      case 'technical':
+        systemPrompt += "Be precise, technical, and detailed in your responses. ";
+        break;
+      case 'creative':
+        systemPrompt += "Be imaginative, creative, and think outside the box. ";
+        break;
+      default:
+        systemPrompt += "Be helpful, clear, and informative. ";
+    }
+    
+    // Response length customization
+    switch (responseLength) {
+      case 'concise':
+        systemPrompt += "Keep responses brief and to the point.";
+        break;
+      case 'detailed':
+        systemPrompt += "Provide comprehensive and detailed responses.";
+        break;
+      default:
+        systemPrompt += "Provide balanced responses that are neither too brief nor too lengthy.";
+    }
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o", // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: message }
+      ],
+      max_tokens: 1500,
+      temperature: 0.7,
+    });
+    return response.choices[0].message.content || "I apologize, but I couldn't generate a response.";
+  } catch (error) {
+    console.error('OpenAI API error:', error);
+    throw new Error("Sorry, I'm having trouble connecting to my AI service right now.");
+  }
+}
+4. Message Handler (server/discord/handler.ts)
+import { Message } from 'discord.js';
+import { generateAIResponse } from '../openai/client';
+import { storage } from '../storage';
+export async function handleMessage(message: Message, prefix: string) {
+  try {
+    const settings = await storage.getSettingsByGuildId(message.guild?.id || 'DM');
+    
+    const response = await generateAIResponse(
+      message.content,
+      settings?.personality,
+      settings?.responseLength
+    );
+    
+    // Handle long messages by splitting them
+    if (response.length <= 2000) {
+      await message.reply(response);
+    } else {
+      const chunks = splitMessage(response, 1900);
+      
+      // Send first chunk as reply
+      await message.reply(chunks[0]);
+      
+      // Send remaining chunks as separate messages
+      for (let i = 1; i < chunks.length; i++) {
+        await message.channel.send(chunks[i]);
+      }
+    }
+  } catch (error) {
+    console.error('Error in handleMessage:', error);
+    await message.reply('Sorry, I encountered an error while processing your message.');
+  }
+}
+function splitMessage(text: string, maxLength = 1900): string[] {
+  if (text.length <= maxLength) return [text];
+  
+  const chunks: string[] = [];
+  let currentChunk = '';
+  const lines = text.split('\n');
+  
+  for (const line of lines) {
+    if (currentChunk.length + line.length + 1 > maxLength) {
+      if (currentChunk.trim()) {
+        chunks.push(currentChunk.trim());
+      }
+      
+      if (line.length > maxLength) {
+        let remainingLine = line;
+        while (remainingLine.length > maxLength) {
+          chunks.push(remainingLine.substring(0, maxLength));
+          remainingLine = remainingLine.substring(maxLength);
+        }
+        currentChunk = remainingLine;
+      } else {
+        currentChunk = line;
+      }
+    } else {
+      if (currentChunk.length > 0) {
+        currentChunk += '\n' + line;
+      } else {
+        currentChunk = line;
+      }
+    }
+  }
+  
+  if (currentChunk.trim()) {
+    chunks.push(currentChunk.trim());
+  }
+  
+  return chunks.length > 0 ? chunks : [text.substring(0, maxLength)];
+}
+Setup Instructions
+Create Discord Bot:
+
+Go to Discord Developer Portal
+Create new application
+Get bot token
+Enable Message Content Intent
+Set Environment Variables:
+
+DISCORD_TOKEN=your_bot_token
+OPENAI_API_KEY=your_openai_key
+Bot Permissions:
+
+Send Messages
+Use Slash Commands
+Read Message History
+Embed Links
+Installation:
+
+npm install discord.js openai
+Usage Examples
+Basic Setup
+import { startBot } from './discord/bot';
+startBot();
+Configuring Response Modes
+Use /aimode disabled for normal ChatGPT-like behavior
+Use /aimode enabled for both message and slash command responses
+Use /aimode required for slash command only mode
+Channel Restrictions
+!settings channels all - Respond in all channels
+!settings channels this - Only respond in current channel
+!settings channels add - Add current channel to allowed list
+!settings channels remove - Remove current channel from allowed list
+This implementation provides a complete Discord AI assistant bot with modern slash command support, flexible response modes, and comprehensive configuration options.
