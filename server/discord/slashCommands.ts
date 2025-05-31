@@ -1,6 +1,10 @@
-import { SlashCommandBuilder, ChatInputCommandInteraction, Client } from 'discord.js';
+import { SlashCommandBuilder, ChatInputCommandInteraction, Client, GuildMember } from 'discord.js';
+import { joinVoiceChannel, getVoiceConnection, VoiceConnectionStatus } from '@discordjs/voice';
 import { generateAIResponse } from '../openai/client';
 import { storage } from '../storage';
+
+// Store voice connections per guild
+const voiceConnections = new Map();
 
 export const slashCommands = [
   new SlashCommandBuilder()
@@ -21,6 +25,16 @@ export const slashCommands = [
   new SlashCommandBuilder()
     .setName('deactivate')
     .setDescription('Deactivate AI responses in this channel')
+    .toJSON(),
+  
+  new SlashCommandBuilder()
+    .setName('joinvoice')
+    .setDescription('Join the voice channel you are currently in')
+    .toJSON(),
+    
+  new SlashCommandBuilder()
+    .setName('leavevoice')
+    .setDescription('Leave the current voice channel')
     .toJSON(),
   
   new SlashCommandBuilder()
@@ -53,13 +67,19 @@ export async function handleSlashCommand(interaction: ChatInputCommandInteractio
     } else if (interaction.commandName === 'deactivate') {
       console.log('Handling /deactivate command');
       await handleDeactivateCommand(interaction);
+    } else if (interaction.commandName === 'joinvoice') {
+      console.log('Handling /joinvoice command');
+      await handleJoinVoiceCommand(interaction);
+    } else if (interaction.commandName === 'leavevoice') {
+      console.log('Handling /leavevoice command');
+      await handleLeaveVoiceCommand(interaction);
     } else if (interaction.commandName === 'aimode') {
       console.log('Handling /aimode command');
       await handleAIModeCommand(interaction);
     } else {
       console.log(`Unknown command: ${interaction.commandName}`);
       await interaction.reply({
-        content: 'Unknown command. Available commands: /ai, /activate, /deactivate, /aimode',
+        content: 'Unknown command. Available commands: /ai, /activate, /deactivate, /joinvoice, /leavevoice, /aimode',
         flags: 64
       });
     }
@@ -291,6 +311,104 @@ async function handleAIModeCommand(interaction: ChatInputCommandInteraction) {
     await interaction.reply({
       content: 'Sorry, I encountered an error while updating the AI mode.',
       flags: 64 // Ephemeral flag
+    });
+  }
+}
+
+async function handleJoinVoiceCommand(interaction: ChatInputCommandInteraction) {
+  try {
+    if (!interaction.guild) {
+      await interaction.reply({
+        content: 'This command can only be used in a server.',
+        flags: 64
+      });
+      return;
+    }
+
+    const member = interaction.member as GuildMember;
+    if (!member.voice.channel) {
+      await interaction.reply({
+        content: 'You need to be in a voice channel for me to join!',
+        flags: 64
+      });
+      return;
+    }
+
+    const voiceChannel = member.voice.channel;
+    
+    // Check if bot already connected to this guild
+    const existingConnection = getVoiceConnection(interaction.guild.id);
+    if (existingConnection) {
+      await interaction.reply({
+        content: `I'm already connected to a voice channel in this server. Use /leavevoice first if you want me to switch channels.`,
+        flags: 64
+      });
+      return;
+    }
+
+    const connection = joinVoiceChannel({
+      channelId: voiceChannel.id,
+      guildId: interaction.guild.id,
+      adapterCreator: interaction.guild.voiceAdapterCreator,
+    });
+
+    voiceConnections.set(interaction.guild.id, connection);
+
+    connection.on(VoiceConnectionStatus.Ready, () => {
+      console.log(`Voice connection ready in guild ${interaction.guild?.name}`);
+    });
+
+    connection.on(VoiceConnectionStatus.Disconnected, () => {
+      console.log(`Voice connection disconnected in guild ${interaction.guild?.name}`);
+      voiceConnections.delete(interaction.guild.id);
+    });
+
+    await interaction.reply({
+      content: `✅ Joined voice channel: **${voiceChannel.name}**\n\nI will stay here until you use /leavevoice to disconnect me.`,
+      flags: 64
+    });
+
+  } catch (error) {
+    console.error('Error joining voice channel:', error);
+    await interaction.reply({
+      content: 'Sorry, I encountered an error while trying to join the voice channel.',
+      flags: 64
+    });
+  }
+}
+
+async function handleLeaveVoiceCommand(interaction: ChatInputCommandInteraction) {
+  try {
+    if (!interaction.guild) {
+      await interaction.reply({
+        content: 'This command can only be used in a server.',
+        flags: 64
+      });
+      return;
+    }
+
+    const connection = getVoiceConnection(interaction.guild.id);
+    if (!connection) {
+      await interaction.reply({
+        content: 'I\'m not connected to any voice channel in this server.',
+        flags: 64
+      });
+      return;
+    }
+
+    connection.destroy();
+    voiceConnections.delete(interaction.guild.id);
+
+    await interaction.reply({
+      content: '✅ Left the voice channel successfully.',
+      flags: 64
+    });
+
+  } catch (error) {
+    console.error('Error leaving voice channel:', error);
+    await interaction.reply({
+      content: 'Sorry, I encountered an error while trying to leave the voice channel.',
+      flags: 64
     });
   }
 }
